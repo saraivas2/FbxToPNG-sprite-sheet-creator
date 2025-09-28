@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Character Viewer - With Sprite Sheet Generator</title>
+    <style>
+        html, body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #333; /* Darker background to show transparency better */
+        }
+        
+        /* Create a container for the canvas that maintains aspect ratio */
+        .canvas-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+        
+        /* Make the canvas perfectly square */
+        #renderCanvas {
+            width: min(100vh, 100vw); /* Take the smaller of viewport height or width */
+            height: min(100vh, 100vw); /* Same as width for perfect 1:1 square */
+            touch-action: none;
+            background-color: transparent; /* Make transparent */
+            /* Create a checkerboard pattern to visualize transparency */
+            background-image: 
+                linear-gradient(45deg, #333 25%, transparent 25%), 
+                linear-gradient(-45deg, #333 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #333 75%),
+                linear-gradient(-45deg, transparent 75%, #333 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+        }
+        
+        /* Optional visual indicator for the square boundary */
+        .canvas-container::after {
+            content: '';
+            position: absolute;
+            border: 1px dashed rgba(255, 255, 255, 0.2);
+            width: min(100vh, 100vw);
+            height: min(100vh, 100vw);
+            pointer-events: none;
+            z-index: 1;
+        }
+        
+        #controlPanel {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            color: white;
+            font-family: Arial, sans-serif;
+            z-index: 100;
+        }
+        #statusBar {
+            position: absolute;
+            bottom: 10px;
+            left: 0;
+            right: 0;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            color: white;
+            font-family: Arial, sans-serif;
+            text-align: center;
+            z-index: 100;
+        }
+        button {
+            margin: 5px;
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+        select {
+            margin: 5px;
+            padding: 5px;
+            width: 100%;
+        }
+        .error {
+            color: #ff6b6b;
+        }
+        .info {
+            color: #6bff6b;
+        }
+        #spriteSheetPanel {
+            position: absolute;
+            top: 190px;
+            right: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            color: white;
+            font-family: Arial, sans-serif;
+            z-index: 100;
+        }
+        
+        label {
+            display: block;
+            margin-top: 5px;
+        }
+        
+        input {
+            width: 60px;
+            margin: 2px 0;
+        }
+        
+        #recordBtn {
+            margin-top: 10px;
+            width: 100%;
+            background-color: #e74c3c;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 3px;
+            cursor: pointer;
+        }
+        
+        #recordBtn:disabled {
+            background-color: #7f8c8d;
+            cursor: not-allowed;
+        }
+        
+        /* Add responsive styles for camera controls on mobile */
+        @media (max-width: 768px) {
+            #cameraControlPanel {
+                left: 5px !important;
+                top: 5px !important;
+                transform: scale(0.8);
+                transform-origin: top left;
+            }
+        }
+        
+        /* Button hover effects for camera controls */
+        #cameraControlPanel button:hover {
+            background-color: #666 !important;
+        }
+        
+        #cameraControlPanel button:active {
+            background-color: #888 !important;
+        }
+        
+        .upload-section {
+            margin: 10px 0;
+            position: relative;
+        }
+        
+        #characterUpload {
+            opacity: 0;
+            width: 0.1px;
+            height: 0.1px;
+            position: absolute;
+        }
+        
+        .upload-label {
+            display: block;
+            padding: 8px 12px;
+            background-color: #4CAF50;
+            color: white;
+            border-radius: 4px;
+            cursor: pointer;
+            text-align: center;
+            margin: 5px 0;
+        }
+        
+        .upload-label:hover {
+            background-color: #45a049;
+        }
+    </style>
+    <!-- BabylonJS and loaders -->
+    <script src="https://cdn.babylonjs.com/babylon.js"></script>
+    <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
+</head>
+<body>
+    <div class="canvas-container">
+        <canvas id="renderCanvas"></canvas>
+    </div>
+    <div id="controlPanel">
+        <h3>Animation Controls</h3>
+        <div class="upload-section">
+            <input type="file" id="characterUpload" accept=".glb">
+            <label for="characterUpload" class="upload-label">Upload Character (.glb)</label>
+        </div>
+        <select id="animationList"></select>
+        <button id="playBtn">Play</button>
+        <button id="pauseBtn">Pause</button>
+    </div>
+    
+    <div id="spriteSheetPanel">
+        <h3>Sprite Sheet Generator</h3>
+        <label for="framesInput">Number of frames:</label>
+        <input type="number" id="framesInput" min="1" max="64" value="16">
+        
+        <label for="columnsInput">Columns:</label>
+        <input type="number" id="columnsInput" min="1" max="16" value="4">
+        
+        <!-- Add cell size inputs -->
+        <div style="display: flex; gap: 5px; margin-top: 5px;">
+            <div style="flex: 1;">
+                <label for="cellWidthInput">Cell Width (px):</label>
+                <input type="number" id="cellWidthInput" min="32" max="1024" value="256" style="width: 100%;">
+            </div>
+            <div style="flex: 1;">
+                <label for="cellHeightInput">Cell Height (px):</label>
+                <input type="number" id="cellHeightInput" min="32" max="1024" value="256" style="width: 100%;">
+            </div>
+        </div>
+        
+        <!-- Existing optimization toggle -->
+        <div style="display: flex; align-items: center; margin-top: 5px;">
+            <input type="checkbox" id="optimizeInput" checked style="width: auto; margin-right: 5px;">
+            <label for="optimizeInput">Center content (maintain exact cell size)</label>
+        </div>
+        
+        <button id="recordBtn">Record Sprite Sheet</button>
+        <div style="font-size: 11px; margin-top: 8px; color: #aaa;">
+            Cell dimensions will be exactly as specified. Content will be centered within cells if optimization is enabled.
+            Background is transparent for clean sprite sheets.
+        </div>
+    </div>
+    
+    <div id="statusBar">
+        <span id="statusMessage">Loading...</span>
+        <span id="keyboardHint" style="font-size: 11px; margin-left: 10px; color: #999;">
+            Arrow keys: Move camera | Home: Reset position
+        </span>
+    </div>
+    
+    <script src="js/SpriteSheetHelper.js"></script>
+    <script src="js/fbxViewer.js"></script>
+    <script src="characterLoader.js"></script>
+    
+    <!-- Add compatibility check -->
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Check if SpriteSheetHelper exists and browser supports required features
+            if (typeof SpriteSheetHelper !== 'undefined') {
+                if (!SpriteSheetHelper.checkCompatibility()) {
+                    // Display warning about sprite sheet functionality
+                    const spriteSheetPanel = document.getElementById('spriteSheetPanel');
+                    if (spriteSheetPanel) {
+                        const warning = document.createElement('div');
+                        warning.innerHTML = "⚠️ Your browser may have limited support for sprite sheet generation.";
+                        warning.style.color = "#ffcc00";
+                        warning.style.marginTop = "10px";
+                        warning.style.fontSize = "12px";
+                        spriteSheetPanel.appendChild(warning);
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8" />
+    <title>FBX Character Viewer - With Sprite Sheet Generator (Three.js)</title>
+    <style>
+        html, body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: #333; /* Darker background */
+            font-family: Arial, sans-serif;
+        }
+        .canvas-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+        #renderCanvas { /* This will be the Three.js canvas */
+            width: min(100vh, 100vw);
+            height: min(100vh, 100vw);
+            touch-action: none;
+            background-color: transparent;
+            background-image:
+                linear-gradient(45deg, #444 25%, transparent 25%),
+                linear-gradient(-45deg, #444 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #444 75%),
+                linear-gradient(-45deg, transparent 75%, #444 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+        }
+        .canvas-container::after { /* Optional boundary indicator */
+            content: '';
+            position: absolute;
+            border: 1px dashed rgba(255, 255, 255, 0.2);
+            width: min(100vh, 100vw);
+            height: min(100vh, 100vw);
+            pointer-events: none;
+            z-index: 1;
+        }
+        #controlPanel {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            color: white;
+            z-index: 100;
+            width: 230px; /* Adjusted width */
+        }
+        #spriteSheetPanel {
+            position: absolute;
+            top: 300px; /* Adjust based on controlPanel height, might need dynamic adjustment or more space */
+            left: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            color: white;
+            z-index: 100;
+            width: 230px; /* Adjusted width */
+        }
+        #statusBar {
+            position: absolute;
+            bottom: 10px;
+            left: 0;
+            right: 0;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            color: white;
+            text-align: center;
+            z-index: 100;
+        }
+        button, input[type="file"], select {
+            margin: 5px 0;
+            padding: 8px;
+            width: calc(100% - 16px); /* Full width minus padding */
+            box-sizing: border-box;
+            cursor: pointer;
+            border-radius: 3px;
+            border: 1px solid #555;
+            background-color: #444;
+            color: white;
+        }
+        select {
+            width: 100%;
+        }
+        label {
+            display: block;
+            margin-top: 8px;
+            font-size: 12px;
+        }
+        input[type="number"] {
+             width: 70px;
+             padding: 6px;
+        }
+        input[type="checkbox"] {
+            width: auto;
+            margin-right: 5px;
+            vertical-align: middle;
+        }
+        .upload-section { margin: 10px 0; position: relative; }
+        #characterUpload { opacity: 0; width: 0.1px; height: 0.1px; position: absolute; }
+        .upload-label {
+            display: block; padding: 8px 12px; background-color: #4CAF50;
+            color: white; border-radius: 4px; cursor: pointer; text-align: center;
+            border: none;
+        }
+        .upload-label:hover { background-color: #45a049; }
+
+        #recordBtn {
+             background-color: #e74c3c;
+             border: none;
+        }
+        #recordBtn:hover {
+            background-color: #c0392b;
+        }
+        #recordBtn:disabled {
+            background-color: #7f8c8d;
+            cursor: not-allowed;
+        }
+
+        #cameraControlPanel {
+            position: absolute;
+            left: 10px;
+            top: 10px;
+            background-color: rgba(0,0,0,0.7);
+            border-radius: 5px;
+            padding: 10px;
+            color: white;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        @media (max-width: 768px) { /* Basic responsiveness */
+            #cameraControlPanel { transform: scale(0.8); transform-origin: top left; }
+            #controlPanel, #spriteSheetPanel { width: 180px; font-size: 0.9em; right:5px; top:5px; }
+            #spriteSheetPanel { top: 180px; }
+        }
+        #cameraControlPanel button:hover { background-color: #666 !important; }
+        #cameraControlPanel button:active { background-color: #888 !important; }
+        #statusMessage.error { color: #ff6b6b; }
+        #statusMessage.info { color: #6bff6b; }
+    </style>
+</head>
+<body>
+    <div class="canvas-container">
+        <canvas id="renderCanvas"></canvas>
+    </div>
+
+    <div id="controlPanel">
+        <h3>Animation Controls</h3>
+        <div class="upload-section">
+            <input type="file" id="characterUpload" accept=".fbx">
+            <label for="characterUpload" class="upload-label">Upload Character (.fbx)</label>
+        </div>
+        <select id="animationList"></select>
+        <button id="playBtn">Play</button>
+        <button id="pauseBtn">Pause</button>
+        <h4 style="margin-top: 15px; margin-bottom: 5px; border-top: 1px solid #555; padding-top: 10px;">Manual Textures</h4>
+        <div style="margin-bottom: 5px;">
+            <label for="diffuseUpload" class="upload-label" style="background-color: #3498db; padding: 6px 10px; font-size: 12px;">Upload Albedo/Diffuse Map</label>
+            <input type="file" id="diffuseUpload" accept="image/*" style="display:none;">
+        </div>
+        <div>
+            <label for="normalUpload" class="upload-label" style="background-color: #9b59b6; padding: 6px 10px; font-size: 12px;">Upload Normal Map</label>
+            <input type="file" id="normalUpload" accept="image/*" style="display:none;">
+        </div>
+    </div>
+
+    <div id="spriteSheetPanel">
+        <h3>Sprite Sheet Generator</h3>
+        <label for="framesInput">Number of frames:</label>
+        <input type="number" id="framesInput" min="1" max="128" value="16">
+
+        <label for="columnsInput">Columns:</label>
+        <input type="number" id="columnsInput" min="1" max="16" value="4">
+
+        <div style="display: flex; gap: 5px; margin-top: 5px;">
+            <div style="flex: 1;">
+                <label for="cellWidthInput">Cell Width (px):</label>
+                <input type="number" id="cellWidthInput" min="32" max="1024" value="480" style="width: 100%;">
+            </div>
+            <div style="flex: 1;">
+                <label for="cellHeightInput">Cell Height (px):</label>
+                <input type="number" id="cellHeightInput" min="32" max="1024" value="480" style="width: 100%;">
+            </div>
+        </div>
+
+        <div style="display: flex; align-items: center; margin-top: 10px;">
+            <input type="checkbox" id="optimizeInput" checked>
+            <label for="optimizeInput" style="font-size:11px; margin-top:0; display:inline;">Center content</label>
+        </div>
+
+        <div style="display: flex; align-items: center; margin-top: 10px;">
+            <input type="checkbox" id="captureIsometricToggle">
+            <label for="captureIsometricToggle" style="font-size:11px; margin-top:0; display:inline;">Capture 8 Isometric Angles</label>
+        </div>
+
+        <button id="recordBtn" style="margin-top: 10px;">Record Sprite Sheet</button>
+        <div style="font-size: 11px; margin-top: 8px; color: #aaa;">
+            Background is transparent. Content can be centered within cells.
+        </div>
+    </div>
+
+    <div id="statusBar">
+        <span id="statusMessage" class="info">Initializing Three.js... Select an FBX file.</span>
+        <span id="keyboardHint" style="font-size: 11px; margin-left: 10px; color: #999;"></span>
+    </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.164.1/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.164.1/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script type="module" src="fbxViewerThree.js"></script>
+</body>
+</html>

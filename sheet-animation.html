@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sprite Sheet Animation Viewer & GIF Exporter</title>
+    <style>
+        body {
+            background-color: #222;
+            color: #fff;
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        
+        .preview-container {
+            background-image: 
+                linear-gradient(45deg, #333 25%, transparent 25%), 
+                linear-gradient(-45deg, #333 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #333 75%),
+                linear-gradient(-45deg, transparent 75%, #333 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+            border: 1px solid #444;
+            border-radius: 5px;
+            margin: 20px 0;
+            padding: 20px;
+        }
+        
+        #animation-canvas {
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+            max-width: 100%;
+        }
+        
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+        
+        button {
+            background-color: #3498db;
+            border: none;
+            border-radius: 4px;
+            color: white;
+            cursor: pointer;
+            padding: 8px 16px;
+        }
+        
+        button:hover {
+            background-color: #2980b9;
+        }
+        
+        button:disabled {
+            background-color: #777;
+            cursor: not-allowed;
+        }
+        
+        .speed-control {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        
+        input[type="range"] {
+            width: 150px;
+        }
+        
+        .info-panel {
+            background-color: rgba(0, 0, 0, 0.5);
+            border-radius: 5px;
+            padding: 15px;
+            margin-top: 20px;
+            text-align: left;
+            width: 100%;
+        }
+        
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+            font-size: 14px;
+        }
+        
+        .info-label {
+            color: #aaa;
+        }
+        
+        .info-value {
+            color: #4fc3f7;
+            font-family: monospace;
+        }
+        
+        h1 {
+            color: #3498db;
+            margin-bottom: 10px;
+        }
+        
+        .zoom-control {
+            margin-top: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .zoom-btn {
+            background-color: #555;
+            font-size: 18px;
+            width: 30px;
+        }
+        
+        .export-panel {
+            margin-top: 20px;
+            background-color: rgba(0, 0, 0, 0.5);
+            border-radius: 5px;
+            padding: 15px;
+        }
+        
+        .export-options {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        
+        .export-options label {
+            display: flex;
+            align-items: center;
+            margin-right: 15px;
+            color: #ddd;
+            font-size: 14px;
+        }
+        
+        .export-options input {
+            margin-right: 5px;
+        }
+        
+        #export-btn {
+            background-color: #e74c3c;
+            margin-top: 10px;
+        }
+        
+        #export-btn:hover {
+            background-color: #c0392b;
+        }
+        
+        .progress-container {
+            margin-top: 10px;
+            background-color: #222;
+            border-radius: 4px;
+            height: 8px;
+            overflow: hidden;
+        }
+        
+        .progress-bar {
+            height: 100%;
+            width: 0%;
+            background-color: #2ecc71;
+            transition: width 0.2s;
+        }
+        
+        #export-status {
+            font-size: 12px;
+            color: #aaa;
+            margin-top: 5px;
+        }
+        
+        .gif-output {
+            margin-top: 15px;
+            border: 1px solid #444;
+            padding: 10px;
+            text-align: center;
+            display: none;
+        }
+        
+        #gif-preview {
+            max-width: 100%;
+            max-height: 300px;
+            margin-bottom: 10px;
+        }
+        
+        .download-btn {
+            background-color: #27ae60;
+        }
+    </style>
+    <!-- Include gif.js library for GIF generation -->
+    <script src="https://cdn.jsdelivr.net/gh/jnordberg/gif.js@0.2.0/dist/gif.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Sprite Sheet Animation Viewer & GIF Exporter</h1>
+        
+        <div class="controls">
+            <button id="play-btn">▶️ Play</button>
+            <button id="pause-btn" disabled>⏸️ Pause</button>
+            <div class="upload-controls" style="margin: 10px 0;">
+                <input type="file" id="sprite-upload" accept=".png" style="display: none;">
+                <input type="file" id="json-upload" accept=".json" style="display: none;">
+                <button id="upload-btn" style="background-color: #27ae60;">📂 Upload Files</button>
+                <div style="font-size: 12px; color: #aaa; margin-top: 5px;">
+                    <span id="sprite-filename">No sprite sheet selected</span><br>
+                    <span id="json-filename">No JSON metadata selected</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="speed-control">
+            <span>Speed:</span>
+            <input type="range" id="speed-slider" min="1" max="60" value="24">
+            <span id="speed-value">24 FPS</span>
+        </div>
+        
+        <div class="preview-container">
+            <canvas id="animation-canvas" width="256" height="256"></canvas>
+        </div>
+        
+        <div class="zoom-control">
+            <button class="zoom-btn" id="zoom-out">-</button>
+            <span id="zoom-level">1x</span>
+            <button class="zoom-btn" id="zoom-in">+</button>
+        </div>
+        
+        <div class="export-panel">
+            <h3>Export Animation as GIF</h3>
+            
+            <div class="export-options">
+                <label>
+                    <input type="checkbox" id="export-loop" checked>
+                    Loop animation
+                </label>
+                
+                <label>
+                    <input type="number" id="export-fps" value="24" min="1" max="60" style="width: 40px;">
+                    FPS
+                </label>
+                
+                <label>
+                    <input type="number" id="export-scale" value="1" min="0.1" max="2" step="0.1" style="width: 40px;">
+                    Scale
+                </label>
+                
+                <label>
+                    <input type="number" id="export-quality" value="10" min="1" max="20" style="width: 40px;">
+                    Quality
+                </label>
+            </div>
+            
+            <button id="export-btn">Generate GIF</button>
+            
+            <div class="progress-container">
+                <div class="progress-bar" id="export-progress"></div>
+            </div>
+            <div id="export-status">Ready to export</div>
+            
+            <div class="gif-output">
+                <img id="gif-preview" alt="GIF Preview">
+                <button id="download-gif-btn" class="download-btn">Download GIF</button>
+            </div>
+        </div>
+        
+        <div class="info-panel">
+            <div class="info-row">
+                <span class="info-label">Animation Name:</span>
+                <span class="info-value" id="animation-name">-</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Frame Size:</span>
+                <span class="info-value" id="frame-size">-</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Total Frames:</span>
+                <span class="info-value" id="total-frames">-</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Layout:</span>
+                <span class="info-value" id="layout-info">-</span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Current Frame:</span>
+                <span class="info-value" id="current-frame">0 / 0</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class SpriteSheetPlayer {
+            constructor(canvasId) {
+                this.canvas = document.getElementById(canvasId);
+                this.ctx = this.canvas.getContext('2d');
+                this.spriteSheet = null;
+                this.metadata = null;
+                this.currentFrame = 0;
+                this.isPlaying = false;
+                this.fps = 24;
+                this.lastFrameTime = 0;
+                this.animationId = null;
+                this.zoom = 1;
+                
+                // Set up default size
+                this.resizeCanvas(256, 256);
+            }
+            
+            async loadSpriteSheet(imageUrl, jsonUrl) {
+                try {
+                    // Load and parse the JSON metadata
+                    const response = await fetch(jsonUrl);
+                    if (!response.ok) {
+                        throw new Error(`Failed to load metadata: ${response.status} ${response.statusText}`);
+                    }
+                    this.metadata = await response.json();
+                    
+                    // Load the sprite sheet image
+                    return new Promise((resolve, reject) => {
+                        this.spriteSheet = new Image();
+                        this.spriteSheet.onload = () => {
+                            this.updateInfoPanel();
+                            this.resizeCanvas(
+                                this.metadata.frameWidth * this.zoom, 
+                                this.metadata.frameHeight * this.zoom
+                            );
+                            this.drawFrame(0);
+                            resolve();
+                        };
+                        this.spriteSheet.onerror = () => {
+                            reject(new Error("Failed to load sprite sheet image"));
+                        };
+                        this.spriteSheet.src = imageUrl;
+                    });
+                } catch (error) {
+                    console.error("Error loading sprite sheet:", error);
+                    alert(`Error: ${error.message}`);
+                    throw error;
+                }
+            }
+            
+            async loadFromFiles(imageFile, jsonFile) {
+                try {
+                    // Load and parse the JSON metadata
+                    const jsonText = await jsonFile.text();
+                    this.metadata = JSON.parse(jsonText);
+                    
+                    // Load the sprite sheet image
+                    return new Promise((resolve, reject) => {
+                        const reader = new FileReader();
+                        reader.onload = (e) => {
+                            this.spriteSheet = new Image();
+                            this.spriteSheet.onload = () => {
+                                this.updateInfoPanel();
+                                this.resizeCanvas(
+                                    this.metadata.frameWidth * this.zoom, 
+                                    this.metadata.frameHeight * this.zoom
+                                );
+                                this.drawFrame(0);
+                                resolve();
+                            };
+                            this.spriteSheet.onerror = () => {
+                                reject(new Error("Failed to load sprite sheet image"));
+                            };
+                            this.spriteSheet.src = e.target.result;
+                        };
+                        reader.onerror = () => reject(new Error("Failed to read image file"));
+                        reader.readAsDataURL(imageFile);
+                    });
+                } catch (error) {
+                    console.error("Error loading sprite sheet:", error);
+                    alert(`Error: ${error.message}`);
+                    throw error;
+                }
+            }
+            
+            updateInfoPanel() {
+                if (!this.metadata) return;
+                
+                document.getElementById('animation-name').textContent = this.metadata.animationName || "Unknown";
+                document.getElementById('frame-size').textContent = 
+                    `${this.metadata.frameWidth}x${this.metadata.frameHeight}px`;
+                document.getElementById('total-frames').textContent = this.metadata.frames || "Unknown";
+                document.getElementById('layout-info').textContent = 
+                    `${this.metadata.columns} cols x ${this.metadata.rows} rows`;
+            }
+            
+            resizeCanvas(width, height) {
+                this.canvas.width = width;
+                this.canvas.height = height;
+                // Clear with transparent background
+                this.ctx.clearRect(0, 0, width, height);
+            }
+            
+            drawFrame(frameIndex) {
+                if (!this.spriteSheet || !this.metadata) return;
+                
+                this.currentFrame = frameIndex % this.metadata.frames;
+                
+                // Calculate source rectangle from sprite sheet
+                const col = this.currentFrame % this.metadata.columns;
+                const row = Math.floor(this.currentFrame / this.metadata.columns);
+                
+                const sourceX = col * this.metadata.frameWidth;
+                const sourceY = row * this.metadata.frameHeight;
+                
+                // Clear canvas with transparent background
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                
+                // Draw the frame with proper scaling
+                this.ctx.drawImage(
+                    this.spriteSheet,
+                    sourceX, sourceY, this.metadata.frameWidth, this.metadata.frameHeight,
+                    0, 0, this.canvas.width, this.canvas.height
+                );
+                
+                // Update frame counter in UI
+                document.getElementById('current-frame').textContent = 
+                    `${this.currentFrame + 1} / ${this.metadata.frames}`;
+            }
+            
+            play() {
+                if (!this.spriteSheet) return;
+                this.isPlaying = true;
+                this.lastFrameTime = 0;
+                this.animate();
+                
+                // Update UI
+                document.getElementById('play-btn').disabled = true;
+                document.getElementById('pause-btn').disabled = false;
+            }
+            
+            pause() {
+                this.isPlaying = false;
+                if (this.animationId) {
+                    cancelAnimationFrame(this.animationId);
+                }
+                
+                // Update UI
+                document.getElementById('play-btn').disabled = false;
+                document.getElementById('pause-btn').disabled = true;
+            }
+            
+            animate(timestamp) {
+                if (!this.isPlaying) return;
+                
+                if (!this.lastFrameTime) this.lastFrameTime = timestamp;
+                
+                const elapsed = timestamp - this.lastFrameTime;
+                const frameInterval = 1000 / this.fps;
+                
+                if (elapsed >= frameInterval) {
+                    // Move to next frame
+                    this.drawFrame(this.currentFrame + 1);
+                    this.lastFrameTime = timestamp;
+                }
+                
+                this.animationId = requestAnimationFrame(this.animate.bind(this));
+            }
+            
+            setFPS(fps) {
+                this.fps = fps;
+            }
+            
+            setZoom(zoomLevel) {
+                this.zoom = Math.max(0.25, Math.min(8, zoomLevel));
+                document.getElementById('zoom-level').textContent = `${this.zoom}x`;
+                
+                if (this.metadata) {
+                    this.resizeCanvas(
+                        this.metadata.frameWidth * this.zoom,
+                        this.metadata.frameHeight * this.zoom
+                    );
+                    this.drawFrame(this.currentFrame);
+                }
+            }
+            
+            // Add methods for GIF export
+            getFrameForExport(frameIndex) {
+                if (!this.spriteSheet || !this.metadata) return null;
+                
+                const tmpCanvas = document.createElement('canvas');
+                const tmpCtx = tmpCanvas.getContext('2d');
+                
+                // Set the canvas to the frame size
+                tmpCanvas.width = this.metadata.frameWidth;
+                tmpCanvas.height = this.metadata.frameHeight;
+                
+                // Draw the specified frame
+                const col = frameIndex % this.metadata.columns;
+                const row = Math.floor(frameIndex / this.metadata.columns);
+                
+                const sourceX = col * this.metadata.frameWidth;
+                const sourceY = row * this.metadata.frameHeight;
+                
+                tmpCtx.clearRect(0, 0, tmpCanvas.width, tmpCanvas.height);
+                tmpCtx.drawImage(
+                    this.spriteSheet,
+                    sourceX, sourceY, this.metadata.frameWidth, this.metadata.frameHeight,
+                    0, 0, tmpCanvas.width, tmpCanvas.height
+                );
+                
+                return tmpCanvas;
+            }
+            
+            exportToGIF(options = {}) {
+                if (!this.spriteSheet || !this.metadata) {
+                    return Promise.reject(new Error('No sprite sheet loaded'));
+                }
+                
+                return new Promise((resolve, reject) => {
+                    const fps = options.fps || this.fps;
+                    const scale = options.scale || 1;
+                    const loop = options.loop !== undefined ? options.loop : true;
+                    const quality = options.quality || 10;
+                    const onProgress = options.onProgress || (() => {});
+                    
+                    // Create a GIF encoder with the proper dimensions
+                    const gif = new GIF({
+                        workers: 4,
+                        quality: quality,
+                        width: this.metadata.frameWidth * scale,
+                        height: this.metadata.frameHeight * scale,
+                        workerScript: 'js/gif.worker.js',
+                        transparent: 'rgba(0,0,0,0)'
+                    });
+                    
+                    // Add each frame to the GIF
+                    for (let i = 0; i < this.metadata.frames; i++) {
+                        const frameCanvas = this.getFrameForExport(i);
+                        
+                        // If we want to scale the frames
+                        if (scale !== 1) {
+                            const scaledCanvas = document.createElement('canvas');
+                            scaledCanvas.width = this.metadata.frameWidth * scale;
+                            scaledCanvas.height = this.metadata.frameHeight * scale;
+                            const ctx = scaledCanvas.getContext('2d');
+                            ctx.drawImage(
+                                frameCanvas, 
+                                0, 0, frameCanvas.width, frameCanvas.height,
+                                0, 0, scaledCanvas.width, scaledCanvas.height
+                            );
+                            gif.addFrame(scaledCanvas, {delay: 1000 / fps, copy: true});
+                        } else {
+                            gif.addFrame(frameCanvas, {delay: 1000 / fps, copy: true});
+                        }
+                        
+                        // Report progress
+                        onProgress((i + 1) / this.metadata.frames);
+                    }
+                    
+                    // Set up event listeners
+                    gif.on('progress', progress => {
+                        onProgress(progress); // Forward progress updates
+                    });
+                    
+                    gif.on('finished', blob => {
+                        resolve(blob); // Return the GIF blob
+                    });
+                    
+                    // Start rendering the GIF
+                    gif.render();
+                });
+            }
+        }
+        
+        // Initialize the player when the page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            const player = new SpriteSheetPlayer('animation-canvas');
+            let exportBlob = null;
+            let selectedSpriteFile = null;
+            let selectedJsonFile = null;
+            
+            // Set up animation control event listeners
+            document.getElementById('play-btn').addEventListener('click', () => {
+                player.play();
+            });
+            
+            document.getElementById('pause-btn').addEventListener('click', () => {
+                player.pause();
+            });
+            
+            document.getElementById('speed-slider').addEventListener('input', (e) => {
+                const fps = parseInt(e.target.value);
+                player.setFPS(fps);
+                document.getElementById('speed-value').textContent = `${fps} FPS`;
+                document.getElementById('export-fps').value = fps; // Sync with export FPS
+            });
+            
+            document.getElementById('zoom-in').addEventListener('click', () => {
+                player.setZoom(player.zoom * 1.5);
+            });
+            
+            document.getElementById('zoom-out').addEventListener('click', () => {
+                player.setZoom(player.zoom / 1.5);
+            });
+            
+            // Add new upload button handler
+            document.getElementById('upload-btn').addEventListener('click', () => {
+                if (!selectedSpriteFile || !selectedJsonFile) {
+                    // Create and trigger hidden file inputs
+                    const spriteInput = document.getElementById('sprite-upload');
+                    const jsonInput = document.getElementById('json-upload');
+                    const uploadBtn = document.getElementById('upload-btn');
+                    
+                    if (!selectedSpriteFile) {
+                        uploadBtn.textContent = '📂 Upload Sprite Sheet (.png)';
+                        spriteInput.value = ''; // Reset input before clicking
+                        spriteInput.click();
+                    } else if (!selectedJsonFile) {
+                        uploadBtn.textContent = '📂 Upload Metadata (.json)';
+                        jsonInput.value = ''; // Reset input before clicking
+                        jsonInput.click();
+                    }
+                } else {
+                    // Load the selected files
+                    document.getElementById('upload-btn').textContent = '📂 Upload Files';
+                    player.loadFromFiles(selectedSpriteFile, selectedJsonFile)
+                        .then(() => {
+                            console.log("Files loaded successfully");
+                            resetGifExport();
+                            // Reset file selections after successful load
+                            resetFileInputs();
+                        })
+                        .catch(error => {
+                            console.error("Error loading files:", error);
+                            alert("Error loading files: " + error.message);
+                            // Reset selection on error
+                            resetFileInputs();
+                        });
+                }
+            });
+
+            // Handle sprite sheet file selection
+            document.getElementById('sprite-upload').addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    selectedSpriteFile = file;
+                    document.getElementById('sprite-filename').textContent = `Sprite: ${file.name}`;
+                    document.getElementById('upload-btn').textContent = '📂 Upload Metadata (.json)';
+                }
+            });
+
+            // Handle JSON file selection
+            document.getElementById('json-upload').addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    selectedJsonFile = file;
+                    document.getElementById('json-filename').textContent = `JSON: ${file.name}`;
+                    document.getElementById('upload-btn').textContent = '✅ Load Files';
+                }
+            });
+            
+            // Function to reset all file inputs
+            function resetFileInputs() {
+                selectedSpriteFile = null;
+                selectedJsonFile = null;
+                document.getElementById('sprite-upload').value = '';
+                document.getElementById('json-upload').value = '';
+                document.getElementById('sprite-filename').textContent = 'No sprite sheet selected';
+                document.getElementById('json-filename').textContent = 'No JSON metadata selected';
+                document.getElementById('upload-btn').textContent = '📂 Upload Sprite Sheet (.png)';
+            }
+            
+            // GIF export button handler
+            document.getElementById('export-btn').addEventListener('click', () => {
+                // Get export options
+                const fps = parseInt(document.getElementById('export-fps').value) || 24;
+                const scale = parseFloat(document.getElementById('export-scale').value) || 1;
+                const loop = document.getElementById('export-loop').checked;
+                const quality = parseInt(document.getElementById('export-quality').value) || 10;
+                
+                // Update status
+                document.getElementById('export-status').textContent = 'Starting GIF creation...';
+                document.getElementById('export-progress').style.width = '0%';
+                document.getElementById('export-btn').disabled = true;
+                
+                // Export to GIF
+                player.exportToGIF({
+                    fps: fps,
+                    scale: scale,
+                    loop: loop,
+                    quality: quality,
+                    onProgress: (progress) => {
+                        document.getElementById('export-progress').style.width = `${Math.floor(progress * 100)}%`;
+                        document.getElementById('export-status').textContent = 
+                            `Creating GIF: ${Math.floor(progress * 100)}%`;
+                    }
+                }).then(blob => {
+                    exportBlob = blob;
+                    
+                    // Show GIF preview
+                    const gifPreview = document.getElementById('gif-preview');
+                    gifPreview.src = URL.createObjectURL(blob);
+                    document.querySelector('.gif-output').style.display = 'block';
+                    
+                    document.getElementById('export-status').textContent = 
+                        `GIF created successfully! Size: ${formatFileSize(blob.size)}`;
+                    document.getElementById('export-btn').disabled = false;
+                })
+                .catch(err => {
+                    console.error('GIF export error:', err);
+                    document.getElementById('export-status').textContent = `Error: ${err.message}`;
+                    document.getElementById('export-btn').disabled = false;
+                });
+            });
+            
+            // Download GIF button handler
+            document.getElementById('download-gif-btn').addEventListener('click', () => {
+                if (!exportBlob) return;
+                
+                const fileName = `${player.metadata?.animationName || 'animation'}_${document.getElementById('export-fps').value}fps.gif`;
+                
+                const downloadLink = document.createElement('a');
+                downloadLink.href = URL.createObjectURL(exportBlob);
+                downloadLink.download = fileName;
+                document.body.appendChild(downloadLink);
+                downloadLink.click();
+                document.body.removeChild(downloadLink);
+            });
+            
+            // Function to reset GIF export state
+            function resetGifExport() {
+                document.getElementById('export-status').textContent = 'Ready to export';
+                document.getElementById('export-progress').style.width = '0%';
+                document.getElementById('export-btn').disabled = false;
+                document.querySelector('.gif-output').style.display = 'none';
+                exportBlob = null;
+            }
+            
+            // Helper function to format file size
+            function formatFileSize(bytes) {
+                if (bytes < 1024) return bytes + ' B';
+                else if (bytes < 1048576) return (bytes / 1024).toFixed(2) + ' KB';
+                else return (bytes / 1048576).toFixed(2) + ' MB';
+            }
+        });
+    </script>
+</body>
+</html>
