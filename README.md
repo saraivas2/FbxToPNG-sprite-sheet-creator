@@ -1,5 +1,5 @@
 # Character Animation Toolkit with some modifications
-
+Character Animation Toolkit originalmente em: https://github.com/sjefvanleeuwen/sprite-sheet-creator
 A comprehensive tool for viewing 3D character models, creating sprite sheets, and exporting animations.
 
 ## Features
