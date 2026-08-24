@@ -1,4 +1,4 @@
-// fbxViewerThree.js - VERSÃO COM SUPORTE ISOMÉTRICO ESTÁTICO E TEXTURAS 100% COMPATÍVEIS
+// fbxViewerThree.js - VERSÃO COM SUPORTE ISOMÉTRICO ESTÁTICO
 import * as THREE from 'three';
 import { FBXLoader } from 'three/addons/loaders/FBXLoader.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -80,7 +80,7 @@ function init() {
 
     const ambientLight = new THREE.AmbientLight(0xffffff, 2.5);
     scene.add(ambientLight);
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.2);
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 2.5);
     directionalLight.position.set(3, 5, 4);
     scene.add(directionalLight);
     
@@ -93,6 +93,11 @@ function init() {
         spriteSheetPanelDiv.appendChild(previewButton);
     }
 
+    const diffuseUpload = document.getElementById('diffuseUpload');
+    const normalUpload = document.getElementById('normalUpload');
+    if (diffuseUpload) diffuseUpload.addEventListener('change', (e) => handleTextureUpload(e, 'map'));
+    if (normalUpload) normalUpload.addEventListener('change', (e) => handleTextureUpload(e, 'normalMap'));
+    
     characterUpload.addEventListener('change', handleFileSelect);
     playBtn.addEventListener('click', playSelectedAnimation);
     pauseBtn.addEventListener('click', togglePauseCurrentAnimation);
@@ -100,16 +105,16 @@ function init() {
     recordBtn.addEventListener('click', startSpriteSheetRecording);
     window.addEventListener('resize', onWindowResize);
 
-    if (rotXInput) rotXInput.addEventListener('input', updateModelRotation);
-    if (rotYInput) rotYInput.addEventListener('input', updateModelRotation);
-    if (rotZInput) rotZInput.addEventListener('input', updateModelRotation);
-    if (resetRotBtn) resetRotBtn.addEventListener('click', resetModelRotation);
+    if(rotXInput) rotXInput.addEventListener('input', updateModelRotation);
+    if(rotYInput) rotYInput.addEventListener('input', updateModelRotation);
+    if(rotZInput) rotZInput.addEventListener('input', updateModelRotation);
+    if(resetRotBtn) resetRotBtn.addEventListener('click', resetModelRotation);
 
     createCameraControlsUI();
     onWindowResize();
     updateOrthoCameraView();
 
-    showStatus("Three.js inicializado. Carregue o modelo FBX ou GLB.", "info");
+    showStatus("Three.js initialized. Load a GLB or FBX file.", "info");
     updateKeyboardHint(false);
     animate();
 }
@@ -132,8 +137,8 @@ function toggleOrthoPreview() {
 
 function updateKeyboardHint(isSpriteModeActive) {
     keyboardHint.textContent = isSpriteModeActive ?
-        "Sprite Cam: Setas/WASD (Mover) | +/- (Zoom) | Home (Reset)" :
-        "Orbit Cam: Arrastar Mouse | Zoom: Scroll | Pan: Botão Direito";
+        "Sprite Cam: Arrows/WASD (Move) | +/- (Zoom) | Home (Reset)" :
+        "Orbit Cam: Mouse Drag | Zoom: Scroll | Pan: Right-Click Drag";
 }
 
 function showStatus(message, type = "info") {
@@ -141,23 +146,10 @@ function showStatus(message, type = "info") {
     statusMessage.className = type;
 }
 
-// Remove apenas o deslocamento horizontal dos Hips mantendo a animação no centro
-function sanitizeClipTracks(clip) {
-    if (!clip || !clip.tracks) return;
-    clip.tracks = clip.tracks.filter((track) => {
-        const isRootPos = track.name.endsWith('.position') && (
-            track.name.toLowerCase().includes('hips') ||
-            track.name.toLowerCase().includes('root') ||
-            track.name.toLowerCase().includes('pelvis')
-        );
-        return !isRootPos;
-    });
-}
-
 function handleFileSelect(event) {
     const file = event.target.files[0];
-    if (!file) { showStatus("Nenhum arquivo selecionado.", "info"); return; }
-    showStatus(`Carregando ${file.name}...`);
+    if (!file) { showStatus("No file selected.", "info"); return; }
+    showStatus(`Loading ${file.name}...`);
 
     if (currentModel) scene.remove(currentModel);
     if (boxHelper) scene.remove(boxHelper);
@@ -177,14 +169,16 @@ function handleFileSelect(event) {
         const modelNode = (loadedObject.scene) ? loadedObject.scene : loadedObject;
         const animations = (loadedObject.animations) ? loadedObject.animations : [];
 
-        // 1. Mapeamento fiel e original de materiais (preserva texturas 100%)
+        // 1. Mapeamento robusto de múltiplos materiais
         modelNode.traverse((child) => {
-            if (child.isMesh || child.isSkinnedMesh) {
+            if (child.isMesh) {
                 child.castShadow = true;
                 child.receiveShadow = true;
                 if (child.material) {
+                    // Trata arrays de materiais (MultiMaterial) ou material único
                     const materials = Array.isArray(child.material) ? child.material : [child.material];
                     materials.forEach((material, index) => {
+                        // Se o material não tiver nome, gera um baseado no índice
                         if (!material.name) material.name = `Material_${index + 1}`;
                         if (!originalMaterials.has(material.name)) {
                             originalMaterials.set(material.name, material);
@@ -194,50 +188,44 @@ function handleFileSelect(event) {
             }
         });
 
+        // 2. Cria a interface customizada para os materiais encontrados
         buildMaterialsUI();
 
-        // 2. Montagem no container raiz
         currentModel = new THREE.Group();
         scene.add(currentModel);
 
         modelNode.position.set(0, 0, 0);
         modelNode.rotation.set(0, 0, 0);
         modelNode.scale.set(1, 1, 1);
+        modelNode.updateMatrixWorld(true);
+
+        const originalBox = new THREE.Box3().setFromObject(modelNode);
+        const originalCenter = originalBox.getCenter(new THREE.Vector3());
+        
+        modelNode.position.x = -originalCenter.x;
+        modelNode.position.z = -originalCenter.z;
+        const feetOffset = originalBox.min.y;
+        modelNode.position.y = -feetOffset;
+        
         currentModel.add(modelNode);
         currentModel.updateMatrixWorld(true);
-
-        // 3. Detecção e Correção de Orientação (Levanta o modelo em pé se vier deitado)
-        let initialBox = new THREE.Box3().setFromObject(currentModel);
-        let initialSize = initialBox.getSize(new THREE.Vector3());
-
-        // Se a profundidade Z for maior que a altura Y, o FBX veio deitado
-        if (initialSize.z > initialSize.y * 1.2) {
-            modelNode.rotation.x = -Math.PI / 2;
-            currentModel.updateMatrixWorld(true);
-            initialBox = new THREE.Box3().setFromObject(currentModel);
-            initialSize = initialBox.getSize(new THREE.Vector3());
-        }
-
-        // 4. Normalização de Escala Precisa (Altura alvo = 2.5 unidades)
+        
+        const alignedBox = new THREE.Box3().setFromObject(currentModel);
+        const alignedSize = alignedBox.getSize(new THREE.Vector3());
+        
         const targetHeight = 2.5;
-        const rawHeight = initialSize.y > 0.05 ? initialSize.y : 1.0;
-        const scaleFactor = targetHeight / rawHeight;
-
+        const scaleFactor = targetHeight / (alignedSize.y || 1);
         currentModel.scale.set(scaleFactor, scaleFactor, scaleFactor);
         currentModel.updateMatrixWorld(true);
 
-        // 5. Centralização no Centro (X=0, Z=0) e Pés no Chão (Y=0)
-        const alignedBox = new THREE.Box3().setFromObject(currentModel);
-        const alignedCenter = alignedBox.getCenter(new THREE.Vector3());
-
-        currentModel.position.x = -alignedCenter.x;
-        currentModel.position.z = -alignedCenter.z;
-        currentModel.position.y = -alignedBox.min.y; // Assenta a sola dos pés no chão Y = 0
-        currentModel.updateMatrixWorld(true);
-
-        // 6. Configuração do BoxHelper e Câmera
         const finalBox = new THREE.Box3().setFromObject(currentModel);
+        const finalMinY = finalBox.min.y;
         const finalHeight = finalBox.getSize(new THREE.Vector3()).y;
+        
+        if (Math.abs(finalMinY) > 0.001) {
+            currentModel.position.y -= finalMinY;
+            currentModel.updateMatrixWorld(true);
+        }
 
         if (boxHelper) scene.remove(boxHelper);
         boxHelper = new THREE.BoxHelper(currentModel, 0xffff00);
@@ -247,7 +235,6 @@ function handleFileSelect(event) {
         orbitControls.target.set(0, finalHeight * 0.5, 0);
         orbitControls.update();
 
-        // 7. Inicialização do Mixer e Saneamento de Animações (mantém no centro)
         mixer = new THREE.AnimationMixer(modelNode);
         populateAnimationList(animations);
         
@@ -255,30 +242,30 @@ function handleFileSelect(event) {
             if (captureModeSelect) captureModeSelect.value = 'static';
             const animatedConfigSection = document.getElementById('animatedConfigSection');
             if (animatedConfigSection) animatedConfigSection.style.display = 'none';
-            showStatus(`${file.name} carregado. Modo estático ativo.`, "info");
+            showStatus(`${file.name} loaded. Static mode active.`, "info");
         } else {
             if (captureModeSelect) captureModeSelect.value = 'animated';
             const animatedConfigSection = document.getElementById('animatedConfigSection');
             if (animatedConfigSection) animatedConfigSection.style.display = 'block';
-            showStatus(`${file.name} carregado com ${animations.length} animações funcionais.`, "info");
+            showStatus(`${file.name} loaded with animations.`, "info");
             playSelectedAnimation();
         }
         
         orthoZoomFactor = finalHeight * 0.6;
         resetCameraPositionSprite();
     },
-    (xhr) => { if (xhr.lengthComputable) showStatus(`Carregando: ${Math.round(xhr.loaded / xhr.total * 100)}%`); },
-    (error) => { showStatus(`Erro ao carregar modelo.`, "error"); }
+    (xhr) => { if (xhr.lengthComputable) showStatus(`Loading: ${Math.round(xhr.loaded / xhr.total * 100)}%`); },
+    (error) => { showStatus(`Error loading model.`, "error"); }
     );
 }
 
 function buildMaterialsUI() {
     const container = document.getElementById('materialsContainer');
     if (!container) return;
-    container.innerHTML = '';
+    container.innerHTML = ''; // Limpa a UI anterior
 
     if (originalMaterials.size === 0) {
-        container.innerHTML = '<div style="font-size:11px; color:#aaa;">Nenhum material encontrado.</div>';
+        container.innerHTML = '<div style="font-size:11px; color:#aaa;">No materials found.</div>';
         return;
     }
 
@@ -291,9 +278,11 @@ function buildMaterialsUI() {
         title.style.cssText = "font-size: 11px; font-weight: bold; margin-bottom: 4px; color: #ecf0f1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;";
         matBlock.appendChild(title);
 
+        // Grid para colocar os dois botões compactos lado a lado
         const buttonGrid = document.createElement('div');
         buttonGrid.style.cssText = "display: flex; gap: 4px;";
 
+        // Configuração do Albedo (Diffuse Map)
         const diffLabel = document.createElement('label');
         diffLabel.textContent = "Albedo";
         diffLabel.style.cssText = "flex: 1; text-align: center; background: #3498db; padding: 4px 2px; font-size: 10px; border-radius: 3px; cursor: pointer;";
@@ -305,6 +294,7 @@ function buildMaterialsUI() {
         diffLabel.appendChild(diffInput);
         buttonGrid.appendChild(diffLabel);
 
+        // Configuração do Normal Map
         const normLabel = document.createElement('label');
         normLabel.textContent = "Normal";
         normLabel.style.cssText = "flex: 1; text-align: center; background: #9b59b6; padding: 4px 2px; font-size: 10px; border-radius: 3px; cursor: pointer;";
@@ -325,8 +315,6 @@ function populateAnimationList(animations) {
     animationList.innerHTML = '';
     animationActions = [];
     animations.forEach((clip, index) => {
-        sanitizeClipTracks(clip);
-
         const option = document.createElement('option');
         option.value = index;
         option.text = clip.name || `Animation ${index + 1}`;
@@ -359,16 +347,15 @@ function togglePauseCurrentAnimation() {
     }
 }
 
-// Upload idêntico à sua versão original que funcionava perfeitamente
 function handleSpecificTextureUpload(event, targetMatName, mapType) {
     const file = event.target.files[0];
     if (!file) return;
     if (!currentModel) {
-        showStatus("Carregue o modelo primeiro.", "error");
+        showStatus("Please load a model first.", "error");
         return;
     }
 
-    showStatus(`Carregando ${mapType} para ${targetMatName}...`, "info");
+    showStatus(`Uploading ${mapType} for ${targetMatName}...`, "info");
     const objectURL = URL.createObjectURL(file);
     const loader = new THREE.ImageLoader();
 
@@ -376,23 +363,24 @@ function handleSpecificTextureUpload(event, targetMatName, mapType) {
         let applied = false;
 
         currentModel.traverse((child) => {
-            if ((child.isMesh || child.isSkinnedMesh) && child.material) {
+            if (child.isMesh && child.material) {
                 const materials = Array.isArray(child.material) ? child.material : [child.material];
                 
                 materials.forEach(material => {
+                    // Verifica se o nome do material bate exatamente com o alvo selecionado
                     if (material.name === targetMatName) {
                         if (material[mapType] && material[mapType].isTexture) {
                             material[mapType].image = image;
                             material[mapType].needsUpdate = true;
                         } else {
                             const newTexture = new THREE.Texture(image);
-                            newTexture.flipY = false;
+                            newTexture.flipY = false; // Compatibilidade padrão para FBX/GLTF
                             material[mapType] = newTexture;
                             newTexture.needsUpdate = true;
                         }
                         
                         if (mapType === 'map') {
-                            material.color.set(0xffffff);
+                            material.color.set(0xffffff); // Evita distorção de cores se a base não for branca
                         }
                         material.needsUpdate = true;
                         applied = true;
@@ -402,9 +390,9 @@ function handleSpecificTextureUpload(event, targetMatName, mapType) {
         });
 
         if (applied) {
-            showStatus(`Textura ${mapType} aplicada a ${targetMatName}!`, "info");
+            showStatus(`Applied ${mapType} to ${targetMatName}!`, "info");
         } else {
-            showStatus(`Material ${targetMatName} não encontrado.`, "error");
+            showStatus(`Material ${targetMatName} not found active in scene nodes.`, "error");
         }
         URL.revokeObjectURL(objectURL);
     });
@@ -416,8 +404,8 @@ function onWindowResize() {
     const size = Math.min(container.clientWidth, container.clientHeight);
     if (size === 0) return;
 
-    if (renderer) renderer.setSize(size, size);
-    if (camera) {
+    if(renderer) renderer.setSize(size, size);
+    if(camera) {
         camera.aspect = 1;
         camera.updateProjectionMatrix();
     }
@@ -435,12 +423,12 @@ function animate() {
 
     const activeCamera = (isPreviewingOrtho || isRecording) ? orthoCamera : camera;
     
-    if (activeCamera === orthoCamera) {
+    if(activeCamera === orthoCamera) {
         if (orbitControls) orbitControls.enabled = false;
     } else {
         if (orbitControls) {
-            orbitControls.enabled = true;
-            orbitControls.update();
+             orbitControls.enabled = true;
+             orbitControls.update();
         }
     }
     if (renderer && scene && activeCamera) renderer.render(scene, activeCamera);
@@ -458,10 +446,10 @@ function updateOrthoCameraView() {
 }
 
 function diagnoseSpriteCapture() {
-    if (!currentModel) { showStatus("Nenhum modelo carregado.", "error"); return; }
+    if (!currentModel) { showStatus("No model loaded.", "error"); return; }
     const box = new THREE.Box3().setFromObject(currentModel);
     const size = box.getSize(new THREE.Vector3());
-    alert(`Altura: ${size.y.toFixed(2)} | Largura: ${size.x.toFixed(2)}`);
+    alert(`Model Height: ${size.y.toFixed(2)} | Width: ${size.x.toFixed(2)}`);
 }
 
 function adjustCameraPositionSprite(directionX, directionY) {
@@ -514,17 +502,18 @@ function createCameraControlsUI() {
     });
 }
 
-// Rotinas de gravação de Spritesheets
+// --- LOGICA REFORMULADA DE CAPTURA E GERACAO ---
 async function startSpriteSheetRecording() {
-    if (!currentModel) { showStatus("Carregue um modelo primeiro.", "error"); return; }
+    if (!currentModel) { showStatus("Load a model first.", "error"); return; }
     
-    const mode = captureModeSelect.value;
+    const mode = captureModeSelect.value; // 'animated' ou 'static'
+    
     if (mode === 'animated' && (!mixer || !currentAction)) {
-        showStatus("Nenhuma animação ativa para gravar.", "error"); return;
+        showStatus("No animation active for animated recording mode.", "error"); return;
     }
 
     isRecording = true;
-    recordBtn.disabled = true; recordBtn.textContent = "Capturando...";
+    recordBtn.disabled = true; recordBtn.textContent = "Capturing...";
     if (isPreviewingOrtho) toggleOrthoPreview();
 
     if (axesHelper) axesHelper.visible = false;
@@ -535,7 +524,7 @@ async function startSpriteSheetRecording() {
     scene.background = null;
 
     const isometricToggle = document.getElementById('captureIsometricToggle');
-    let anglesToCapture = [0, 90, 270];
+    let anglesToCapture = [0,90,270];
     if (isometricToggle && isometricToggle.checked) {
         anglesToCapture = [0, 45, 90, 135, 180, 225, 270, 315];
     }
@@ -544,7 +533,11 @@ async function startSpriteSheetRecording() {
     const filenameForSheet = baseName.replace(/[^\w-]/g, '_') || 'spritesheet';
 
     if (mode === 'static') {
+        // --- PROCESSO DE CAPTURA PARA MODELOS ESTÁTICOS ---
         let localRecordedFrames = [];
+        const box = new THREE.Box3().setFromObject(currentModel);
+        const center = box.getCenter(new THREE.Vector3());
+        
         const originalCamPos = orthoCamera.position.clone();
         const originalCamRot = orthoCamera.rotation.clone();
         const camDist = 10;
@@ -552,8 +545,11 @@ async function startSpriteSheetRecording() {
         for (let i = 0; i < anglesToCapture.length; i++) {
             const angleDeg = anglesToCapture[i] !== null ? anglesToCapture[i] : 0;
             const angleRad = THREE.MathUtils.degToRad(angleDeg);
+            
+            // Ângulo de inclinação isométrica real: atan(1 / sqrt(2)) ≈ 35.264°
             const isoElevationRad = THREE.MathUtils.degToRad(35.264);
 
+            // Coordenadas esféricas perfeitas para projeção isométrica rotacional
             const x = cameraOffsetX + camDist * Math.sin(angleRad) * Math.cos(isoElevationRad);
             const z = camDist * Math.cos(angleRad) * Math.cos(isoElevationRad);
             const y = cameraOffsetY + camDist * Math.sin(isoElevationRad);
@@ -562,10 +558,12 @@ async function startSpriteSheetRecording() {
             orthoCamera.lookAt(cameraOffsetX, cameraOffsetY, 0);
             orthoCamera.updateProjectionMatrix();
 
+            // Renderiza e captura o frame único desse ângulo estático
             await new Promise((res) => {
                 requestAnimationFrame(() => {
                     const cellW = parseInt(cellWidthInput.value) || 480;
                     const cellH = parseInt(cellHeightInput.value) || 480;
+                    
                     const originalSize = new THREE.Vector2();
                     renderer.getSize(originalSize);
                     
@@ -582,17 +580,21 @@ async function startSpriteSheetRecording() {
                     img.src = dataURL;
                 });
             });
-            showStatus(`Capturado ângulo ${angleDeg}° (${i+1}/${anglesToCapture.length})`, "info");
+            showStatus(`Captured angle ${angleDeg}° (${i+1}/${anglesToCapture.length})`, "info");
         }
 
+        // Gera a spritesheet consolidada contendo todos os ângulos capturados do objeto estático
         if (localRecordedFrames.length > 0) {
             generateSpriteSheetImage(`${filenameForSheet}_isometric_set`, localRecordedFrames);
         }
 
+        // Restaura estados de câmera padrão
         orthoCamera.position.copy(originalCamPos);
         orthoCamera.rotation.copy(originalCamRot);
         updateOrthoCameraView();
+
     } else {
+        // --- PROCESSO DE CAPTURA ANIMADO ORIGINAL (MANTIDO) ---
         const originalCamPos = orthoCamera.position.clone();
         for (let i = 0; i < anglesToCapture.length; i++) {
             const angleDeg = anglesToCapture[i];
@@ -611,16 +613,17 @@ async function startSpriteSheetRecording() {
         updateOrthoCameraView();
     }
 
+    // Finalização e restauração da UI
     if (axesHelper) axesHelper.visible = true;
     if (gridHelper) gridHelper.visible = true;
     if (boxHelper) boxHelper.visible = true;
     recordBtn.disabled = false; recordBtn.textContent = "Record Sprite Sheet";
     isRecording = false;
-    showStatus("Captura concluída com sucesso!", "info");
+    showStatus("Capture completed successfully!", "info");
 }
 
 function captureAndGenerateSheetForAngle(filenameForSheet, totalAnglesParam, currentIndexParam) {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
         let localRecordedFrames = [];
         let localCurrentFrameBeingCaptured = 0;
         let localFrameCountToCapture = parseInt(framesInput.value) || 16;

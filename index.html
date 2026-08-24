@@ -1,8 +1,8 @@
 <!DOCTYPE html>
-<html>
+<html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <title>Character Viewer - With Sprite Sheet Generator</title>
+    <meta charset="UTF-8" />
+    <title>FBX Character Viewer - With Sprite Sheet Generator (Three.js)</title>
     <style>
         html, body {
             width: 100%;
@@ -10,10 +10,9 @@
             margin: 0;
             padding: 0;
             overflow: hidden;
-            background-color: #333; /* Darker background to show transparency better */
+            background-color: #333;
+            font-family: Arial, sans-serif;
         }
-        
-        /* Create a container for the canvas that maintains aspect ratio */
         .canvas-container {
             width: 100%;
             height: 100%;
@@ -22,24 +21,19 @@
             justify-content: center;
             position: relative;
         }
-        
-        /* Make the canvas perfectly square */
         #renderCanvas {
-            width: min(100vh, 100vw); /* Take the smaller of viewport height or width */
-            height: min(100vh, 100vw); /* Same as width for perfect 1:1 square */
+            width: min(100vh, 100vw);
+            height: min(100vh, 100vw);
             touch-action: none;
-            background-color: transparent; /* Make transparent */
-            /* Create a checkerboard pattern to visualize transparency */
-            background-image: 
-                linear-gradient(45deg, #333 25%, transparent 25%), 
-                linear-gradient(-45deg, #333 25%, transparent 25%),
-                linear-gradient(45deg, transparent 75%, #333 75%),
-                linear-gradient(-45deg, transparent 75%, #333 75%);
+            background-color: transparent;
+            background-image:
+                linear-gradient(45deg, #444 25%, transparent 25%),
+                linear-gradient(-45deg, #444 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #444 75%),
+                linear-gradient(-45deg, transparent 75%, #444 75%);
             background-size: 20px 20px;
             background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
         }
-        
-        /* Optional visual indicator for the square boundary */
         .canvas-container::after {
             content: '';
             position: absolute;
@@ -49,7 +43,6 @@
             pointer-events: none;
             z-index: 1;
         }
-        
         #controlPanel {
             position: absolute;
             top: 10px;
@@ -58,8 +51,19 @@
             padding: 10px;
             border-radius: 5px;
             color: white;
-            font-family: Arial, sans-serif;
             z-index: 100;
+            width: 230px;
+        }
+        #spriteSheetPanel {
+            position: absolute;
+            top: 300px;
+            left: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+            padding: 10px;
+            border-radius: 5px;
+            color: white;
+            z-index: 100;
+            width: 230px;
         }
         #statusBar {
             position: absolute;
@@ -69,192 +73,275 @@
             background-color: rgba(0, 0, 0, 0.7);
             padding: 10px;
             color: white;
-            font-family: Arial, sans-serif;
             text-align: center;
             z-index: 100;
         }
-        button {
-            margin: 5px;
-            padding: 5px 10px;
+        button, input[type="file"], select {
+            margin: 5px 0;
+            padding: 8px;
+            width: calc(100% - 16px);
+            box-sizing: border-box;
             cursor: pointer;
+            border-radius: 3px;
+            border: 1px solid #555;
+            background-color: #444;
+            color: white;
         }
         select {
-            margin: 5px;
-            padding: 5px;
             width: 100%;
         }
-        .error {
-            color: #ff6b6b;
-        }
-        .info {
-            color: #6bff6b;
-        }
-        #spriteSheetPanel {
-            position: absolute;
-            top: 190px;
-            right: 10px;
-            background-color: rgba(0, 0, 0, 0.7);
-            padding: 10px;
-            border-radius: 5px;
-            color: white;
-            font-family: Arial, sans-serif;
-            z-index: 100;
-        }
-        
         label {
             display: block;
-            margin-top: 5px;
+            margin-top: 8px;
+            font-size: 12px;
         }
-        
-        input {
-            width: 60px;
-            margin: 2px 0;
+        input[type="number"] {
+            width: 70px;
+            padding: 6px;
         }
-        
-        #recordBtn {
-            margin-top: 10px;
-            width: 100%;
-            background-color: #e74c3c;
-            color: white;
+        input[type="checkbox"] {
+            width: auto;
+            margin-right: 5px;
+            vertical-align: middle;
+        }
+        .upload-section { 
+            margin: 10px 0; 
+            position: relative; 
+        }
+        #characterUpload { 
+            opacity: 0; 
+            width: 0.1px; 
+            height: 0.1px; 
+            position: absolute; 
+        }
+        .upload-label {
+            display: block; 
+            padding: 8px 12px; 
+            background-color: #4CAF50;
+            color: white; 
+            border-radius: 4px; 
+            cursor: pointer; 
+            text-align: center;
             border: none;
-            padding: 5px 10px;
-            border-radius: 3px;
-            cursor: pointer;
         }
-        
+        .upload-label:hover { 
+            background-color: #45a049; 
+        }
+        #recordBtn {
+            background-color: #e74c3c;
+            border: none;
+        }
+        #recordBtn:hover {
+            background-color: #c0392b;
+        }
         #recordBtn:disabled {
             background-color: #7f8c8d;
             cursor: not-allowed;
         }
-        
-        /* Add responsive styles for camera controls on mobile */
+        #cameraControlPanel {
+            position: absolute;
+            left: 10px;
+            top: 10px;
+            background-color: rgba(0,0,0,0.7);
+            border-radius: 5px;
+            padding: 10px;
+            color: white;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
         @media (max-width: 768px) {
-            #cameraControlPanel {
-                left: 5px !important;
-                top: 5px !important;
-                transform: scale(0.8);
-                transform-origin: top left;
+            #cameraControlPanel { 
+                transform: scale(0.8); 
+                transform-origin: top left; 
+            }
+            #controlPanel, #spriteSheetPanel { 
+                width: 180px; 
+                font-size: 0.9em; 
+                right:5px; 
+                top:5px; 
+            }
+            #spriteSheetPanel { 
+                top: 180px; 
             }
         }
-        
-        /* Button hover effects for camera controls */
-        #cameraControlPanel button:hover {
-            background-color: #666 !important;
+        #cameraControlPanel button:hover { 
+            background-color: #666 !important; 
         }
-        
-        #cameraControlPanel button:active {
-            background-color: #888 !important;
+        #cameraControlPanel button:active { 
+            background-color: #888 !important; 
         }
-        
-        .upload-section {
-            margin: 10px 0;
-            position: relative;
+        #statusMessage.error { 
+            color: #ff6b6b; 
         }
-        
-        #characterUpload {
-            opacity: 0;
-            width: 0.1px;
-            height: 0.1px;
-            position: absolute;
-        }
-        
-        .upload-label {
-            display: block;
-            padding: 8px 12px;
-            background-color: #4CAF50;
-            color: white;
-            border-radius: 4px;
-            cursor: pointer;
-            text-align: center;
-            margin: 5px 0;
-        }
-        
-        .upload-label:hover {
-            background-color: #45a049;
+        #statusMessage.info { 
+            color: #6bff6b; 
         }
     </style>
-    <!-- BabylonJS and loaders -->
-    <script src="https://cdn.babylonjs.com/babylon.js"></script>
-    <script src="https://cdn.babylonjs.com/loaders/babylonjs.loaders.min.js"></script>
 </head>
 <body>
     <div class="canvas-container">
         <canvas id="renderCanvas"></canvas>
     </div>
+
     <div id="controlPanel">
         <h3>Animation Controls</h3>
         <div class="upload-section">
-            <input type="file" id="characterUpload" accept=".glb">
-            <label for="characterUpload" class="upload-label">Upload Character (.glb)</label>
+            <input type="file" id="characterUpload" accept=".fbx,.glb,.gltf">
+            <label for="characterUpload" class="upload-label">Upload Character (.fbx/.glb)</label>
         </div>
         <select id="animationList"></select>
-        <button id="playBtn">Play</button>
-        <button id="pauseBtn">Pause</button>
+        
+        <div style="display: flex; gap: 5px;">
+            <button id="playBtn" style="flex:1;">Play</button>
+            <button id="pauseBtn" style="flex:1;">Pause</button>
+        </div>
+
+        <h4 style="margin-top: 15px; margin-bottom: 5px; border-top: 1px solid #555; padding-top: 10px;">Model Materials & Textures</h4>
+        <!-- Este contêiner será populado via código baseado nos materiais do modelo -->
+        <div id="materialsContainer" style="max-height: 200px; overflow-y: auto; padding-right: 5px;"></div>
+
+        <h4 style="margin-top: 15px; margin-bottom: 5px; border-top: 1px solid #555; padding-top: 10px;">Model Rotation (Deg)</h4>
+        <div style="display: flex; gap: 5px; align-items: center;">
+            <div style="flex: 1;">
+                <label for="rotX" style="margin:0; font-size:10px;">X</label>
+                <input type="number" id="rotX" value="0" step="15" style="width: 100%;">
+            </div>
+            <div style="flex: 1;">
+                <label for="rotY" style="margin:0; font-size:10px;">Y</label>
+                <input type="number" id="rotY" value="0" step="15" style="width: 100%;">
+            </div>
+            <div style="flex: 1;">
+                <label for="rotZ" style="margin:0; font-size:10px;">Z</label>
+                <input type="number" id="rotZ" value="0" step="15" style="width: 100%;">
+            </div>
+        </div>
+        <button id="resetRotBtn" style="margin-top: 5px; font-size: 11px; background-color: #555;">Reset Rotation</button>
     </div>
-    
+
     <div id="spriteSheetPanel">
         <h3>Sprite Sheet Generator</h3>
-        <label for="framesInput">Number of frames:</label>
-        <input type="number" id="framesInput" min="1" max="64" value="16">
         
+        <label for="captureModeSelect">Capture Mode:</label>
+        <select id="captureModeSelect">
+            <option value="animated">Animated (Time-based)</option>
+            <option value="static">Static Model (Angles Only)</option>
+        </select>
+
+        <div id="animatedConfigSection">
+            <label for="framesInput">Number of frames:</label>
+            <input type="number" id="framesInput" min="1" max="128" value="16">
+        </div>
+
         <label for="columnsInput">Columns:</label>
         <input type="number" id="columnsInput" min="1" max="16" value="4">
         
-        <!-- Add cell size inputs -->
+        <button id="diagnoseBtn" style="margin-top: 10px; background-color: #3498db; font-size: 11px;">Diagnose Sprite Capture</button>
+
+        <div style="margin-top: 10px; border-top: 1px solid #555; padding-top: 10px;">
+            <h4 style="margin: 5px 0; font-size: 12px;">Sprite Alignment</h4>
+            <div style="display: flex; gap: 5px;">
+                <button id="alignFeetBtn" style="flex:1; font-size:11px; padding: 5px;">Align Feet to Base</button>
+                <button id="centerModelBtn" style="flex:1; font-size:11px; padding: 5px;">Center Model</button>
+            </div>
+            <div style="display: flex; gap: 5px; margin-top: 5px;">
+                <button id="moveUpBtn" style="flex:1; font-size:11px; padding: 3px;">Move Up</button>
+                <button id="moveDownBtn" style="flex:1; font-size:11px; padding: 3px;">Move Down</button>
+            </div>
+        </div>
+        
         <div style="display: flex; gap: 5px; margin-top: 5px;">
             <div style="flex: 1;">
                 <label for="cellWidthInput">Cell Width (px):</label>
-                <input type="number" id="cellWidthInput" min="32" max="1024" value="256" style="width: 100%;">
+                <input type="number" id="cellWidthInput" min="32" max="1024" value="480" style="width: 100%;">
             </div>
             <div style="flex: 1;">
                 <label for="cellHeightInput">Cell Height (px):</label>
-                <input type="number" id="cellHeightInput" min="32" max="1024" value="256" style="width: 100%;">
+                <input type="number" id="cellHeightInput" min="32" max="1024" value="480" style="width: 100%;">
             </div>
         </div>
-        
-        <!-- Existing optimization toggle -->
-        <div style="display: flex; align-items: center; margin-top: 5px;">
-            <input type="checkbox" id="optimizeInput" checked style="width: auto; margin-right: 5px;">
-            <label for="optimizeInput">Center content (maintain exact cell size)</label>
+
+        <div style="display: flex; align-items: center; margin-top: 10px;">
+            <input type="checkbox" id="optimizeInput" checked>
+            <label for="optimizeInput" style="font-size:11px; margin-top:0; display:inline;">Center content</label>
         </div>
-        
-        <button id="recordBtn">Record Sprite Sheet</button>
+
+        <div style="display: flex; align-items: center; margin-top: 10px;">
+            <input type="checkbox" id="captureIsometricToggle" checked>
+            <label for="captureIsometricToggle" style="font-size:11px; margin-top:0; display:inline;">Capture 8 Isometric Angles</label>
+        </div>
+
+        <button id="recordBtn" style="margin-top: 10px;">Record Sprite Sheet</button>
         <div style="font-size: 11px; margin-top: 8px; color: #aaa;">
-            Cell dimensions will be exactly as specified. Content will be centered within cells if optimization is enabled.
-            Background is transparent for clean sprite sheets.
+            Background is transparent. Content can be centered within cells.
         </div>
     </div>
-    
+
     <div id="statusBar">
-        <span id="statusMessage">Loading...</span>
-        <span id="keyboardHint" style="font-size: 11px; margin-left: 10px; color: #999;">
-            Arrow keys: Move camera | Home: Reset position
-        </span>
+        <span id="statusMessage" class="info">Initializing Three.js... Select an FBX file.</span>
+        <span id="keyboardHint" style="font-size: 11px; margin-left: 10px; color: #999;"></span>
     </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.164.1/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.164.1/examples/jsm/"
+        }
+    }
+    </script>
     
-    <script src="js/SpriteSheetHelper.js"></script>
-    <script src="js/fbxViewer.js"></script>
-    <script src="characterLoader.js"></script>
-    
-    <!-- Add compatibility check -->
-    <script>
+    <script type="module">
         document.addEventListener('DOMContentLoaded', function() {
-            // Check if SpriteSheetHelper exists and browser supports required features
-            if (typeof SpriteSheetHelper !== 'undefined') {
-                if (!SpriteSheetHelper.checkCompatibility()) {
-                    // Display warning about sprite sheet functionality
-                    const spriteSheetPanel = document.getElementById('spriteSheetPanel');
-                    if (spriteSheetPanel) {
-                        const warning = document.createElement('div');
-                        warning.innerHTML = "⚠️ Your browser may have limited support for sprite sheet generation.";
-                        warning.style.color = "#ffcc00";
-                        warning.style.marginTop = "10px";
-                        warning.style.fontSize = "12px";
-                        spriteSheetPanel.appendChild(warning);
-                    }
+            setTimeout(() => {
+                const alignFeetBtn = document.getElementById('alignFeetBtn');
+                const centerModelBtn = document.getElementById('centerModelBtn');
+                const moveUpBtn = document.getElementById('moveUpBtn');
+                const moveDownBtn = document.getElementById('moveDownBtn');
+                const diagnoseBtn = document.getElementById('diagnoseBtn');
+                const captureModeSelect = document.getElementById('captureModeSelect');
+                const animatedConfigSection = document.getElementById('animatedConfigSection');
+
+                if (captureModeSelect && animatedConfigSection) {
+                    captureModeSelect.addEventListener('change', function() {
+                        if (this.value === 'static') {
+                            animatedConfigSection.style.display = 'none';
+                        } else {
+                            animatedConfigSection.style.display = 'block';
+                        }
+                    });
                 }
-            }
+                
+                if (alignFeetBtn) {
+                    alignFeetBtn.addEventListener('click', function() {
+                        if (window.alignModelToBase) window.alignModelToBase();
+                    });
+                }
+                if (centerModelBtn) {
+                    centerModelBtn.addEventListener('click', function() {
+                        if (window.centerModelVertically) window.centerModelVertically();
+                    });
+                }
+                if (moveUpBtn) {
+                    moveUpBtn.addEventListener('click', function() {
+                        if (window.moveModelVertical) window.moveModelVertical(0.1);
+                    });
+                }
+                if (moveDownBtn) {
+                    moveDownBtn.addEventListener('click', function() {
+                        if (window.moveModelVertical) window.moveModelVertical(-0.1);
+                    });
+                }
+                if (diagnoseBtn) {
+                    diagnoseBtn.addEventListener('click', function() {
+                        if (window.diagnoseSpriteCapture) window.diagnoseSpriteCapture();
+                    });
+                }
+            }, 1000);
         });
     </script>
+    
+    <script type="module" src="fbxViewerThree.js"></script>
 </body>
 </html>
